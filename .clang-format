@@ -1,0 +1,24 @@
+BasedOnStyle: LLVM
+
+AlignAfterOpenBracket: BlockIndent
+AlignOperands: Align
+AlignEscapedNewlines: DontAlign
+AllowShortCaseLabelsOnASingleLine: true
+# AllowShortCompoundRequirementOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: All
+BreakBeforeTernaryOperators: true
+Cpp11BracedListStyle: false
+InsertTrailingCommas: Wrapped
+SpaceBeforeCpp11BracedList: true
+SpacesInContainerLiterals: true
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: AlignWithSpaces
