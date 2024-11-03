@@ -1,2 +1,2 @@
 all: fusemake.c
-	gcc -Wall $$(pkg-config --libs --cflags fuse3) $< -o fusemake
+	gcc $(FLAGS) -Wall $$(pkg-config --libs --cflags fuse3) $< -o fusemake
