@@ -667,7 +667,7 @@ fm_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 
 static int fm_do_open(Ino ino, mode_t mode, struct fuse_file_info *fi) {
 	DEBUG("fm_do_open %s\n", inode(ino)->name);
-	int fd = open(inode(ino)->name, fi->flags & ~O_NOFOLLOW, mode);
+	int fd = open(inode(ino)->path, fi->flags & ~O_NOFOLLOW, mode);
 	if (fd == -1)
 		return errno;
 	fi->fh = fd;
