@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #define LENGTH(ARRAY) (sizeof(ARRAY) / sizeof((ARRAY)[0]))
+#define DOT_FUSERMAKE ".fusemake"
 
 #define DEBUG(...) fprintf(stderr, __VA_ARGS__)
 
@@ -280,6 +281,8 @@ out_err:
 }
 
 static void fm_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOENT);
 	struct fuse_entry_param e;
 	int err;
 	Ino child;
@@ -319,6 +322,8 @@ static void fm_mknod_symlink(
 	dev_t rdev,
 	const char *link
 ) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_mknod_symlink\n");
 	if (parent == 1)
 		return (void)fuse_reply_err(req, ENOTSUP);
@@ -368,6 +373,8 @@ static void fm_symlink(
 
 static void
 fm_link(fuse_req_t req, fuse_ino_t ino, fuse_ino_t parent, const char *name) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_link\n");
 	if (ino == 1 || parent == 1)
 		return (void)fuse_reply_err(req, ENOTSUP);
@@ -394,6 +401,8 @@ out_err:
 }
 
 static void fm_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_rmdir\n");
 	int res;
 	if (parent == 1)
@@ -413,6 +422,8 @@ static void fm_rename(
 	const char *newname,
 	unsigned int flags
 ) {
+	if (0 == strcmp(name, DOT_FUSERMAKE) || 0 == strcmp(newname, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_rename\n");
 	int res;
 	if (parent == 1 || newparent == 1)
@@ -429,6 +440,8 @@ static void fm_rename(
 }
 
 static void fm_unlink(fuse_req_t req, fuse_ino_t parent, const char *name) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_unlink\n");
 	int res;
 	if (parent == 1)
@@ -494,9 +507,10 @@ fm_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	fuse_reply_open(req, fi);
 }
 
-static int is_dot_or_dotdot(const char *name) {
-	return name[0] == '.'
-	       && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'));
+static int is_ignored_entry(const char *name) {
+	return (name[0] == '.'
+	        && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
+	       || 0 == strcmp(name, DOT_FUSERMAKE);
 }
 static int fm_read_root(
 	fuse_req_t req,
@@ -581,7 +595,7 @@ static void fm_do_readdir(
 		if (ent == NULL)
 			goto end;
 		// Skip these, the driver will return them for us.
-		if (is_dot_or_dotdot(ent->d_name))
+		if (is_ignored_entry(ent->d_name))
 			continue;
 		Ino child = ino_child(parent, ent->d_name);
 		if (plus) {
@@ -652,7 +666,7 @@ fm_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 }
 
 static int fm_do_open(Ino ino, mode_t mode, struct fuse_file_info *fi) {
-	DEBUG("fm_do_open\n");
+	DEBUG("fm_do_open %s\n", inode(ino)->name);
 	int fd = open(inode(ino)->name, fi->flags & ~O_NOFOLLOW, mode);
 	if (fd == -1)
 		return errno;
@@ -668,6 +682,8 @@ static void fm_create(
 	mode_t mode,
 	struct fuse_file_info *fi
 ) {
+	if (0 == strcmp(name, DOT_FUSERMAKE))
+		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_create\n");
 	if (parent == 1)
 		return (void)fuse_reply_err(req, EEXIST);
@@ -705,14 +721,17 @@ static void fm_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	DEBUG("fm_open\n");
 	if (ino == 1)
 		return (void)fuse_reply_err(req, EISDIR);
-	fm_do_open(fuse2ino(ino), 0, fi);
-	fuse_reply_open(req, fi);
+	int err = fm_do_open(fuse2ino(ino), 0, fi);
+  DEBUG("%d\n", err);
+	if (err == 0)
+		fuse_reply_open(req, fi);
+	else
+		fuse_reply_err(req, err);
 }
 
 static void
 fm_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
-	DEBUG("fm_do_open\n");
-	(void)ino;
+	DEBUG("fm_release %s\n", inode(fuse2ino(ino))->path);
 	close(fi->fh);
 	fuse_reply_err(req, 0);
 }
