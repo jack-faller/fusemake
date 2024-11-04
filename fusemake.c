@@ -23,10 +23,12 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#define DEPEND_ATTR "fusemake.depend"
 #define LENGTH(ARRAY) (sizeof(ARRAY) / sizeof((ARRAY)[0]))
-#define DOT_FUSERMAKE ".fusemake"
+#define DOT_FUSEMAKE ".fusemake"
 
-#define DEBUG(...) fprintf(stderr, __VA_ARGS__)
+#define eprintf(...) fprintf(stderr, __VA_ARGS__)
+#define DEBUG(...) eprintf(__VA_ARGS__)
 
 #define PROCESS_MAX (1 << 16)
 // Inode one the root, so shift ino to exclude zero and one.
@@ -65,7 +67,7 @@ typedef struct Inode_List {
 
 Inode_List processes[PROCESS_MAX];
 int processes_len;
-char project_root[PATH_MAX], *project_root_name;
+char *builder_path;
 
 void ino_ref(Ino ino, int count) { processes[ino.process].lookup += count; }
 // Use these instead of the fuse versions to handle lookups.
@@ -91,7 +93,7 @@ Ino ino_parent(Ino child) {
 	child.id = inode(child)->parent;
 	return child;
 }
-
+char ROOT[] = ".";
 Ino add_root(int process) {
 	const int initial_cap = 16;
 	processes_len = MAX(process + 1, processes_len);
@@ -104,8 +106,8 @@ Ino add_root(int process) {
 	};
 	Inode *out = &processes[process].list[0];
 	*out = (Inode) {
-		.path = project_root,
-		.name = project_root_name,
+		.path = ROOT,
+		.name = ROOT,
 	};
 	return (Ino) { .id = 0, .process = process };
 }
@@ -283,7 +285,7 @@ out_err:
 }
 
 static void fm_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOENT);
 	struct fuse_entry_param e;
 	int err;
@@ -324,7 +326,7 @@ static void fm_mknod_symlink(
 	dev_t rdev,
 	const char *link
 ) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_mknod_symlink\n");
 	if (parent == 1)
@@ -375,7 +377,7 @@ static void fm_symlink(
 
 static void
 fm_link(fuse_req_t req, fuse_ino_t ino, fuse_ino_t parent, const char *name) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_link\n");
 	if (ino == 1 || parent == 1)
@@ -403,7 +405,7 @@ out_err:
 }
 
 static void fm_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_rmdir\n");
 	int res;
@@ -424,7 +426,7 @@ static void fm_rename(
 	const char *newname,
 	unsigned int flags
 ) {
-	if (0 == strcmp(name, DOT_FUSERMAKE) || 0 == strcmp(newname, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE) || 0 == strcmp(newname, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_rename\n");
 	int res;
@@ -442,7 +444,7 @@ static void fm_rename(
 }
 
 static void fm_unlink(fuse_req_t req, fuse_ino_t parent, const char *name) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_unlink\n");
 	int res;
@@ -512,7 +514,7 @@ fm_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 static int is_ignored_entry(const char *name) {
 	return (name[0] == '.'
 	        && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
-	       || 0 == strcmp(name, DOT_FUSERMAKE);
+	       || 0 == strcmp(name, DOT_FUSEMAKE);
 }
 static int fm_read_root(
 	fuse_req_t req,
@@ -535,7 +537,7 @@ static int fm_read_root(
 			}
 		}
 	} else {
-		if (-1 == lstat(project_root, &stbuf))
+		if (-1 == lstat(ROOT, &stbuf))
 			return errno;
 	}
 	size_t ent_size;
@@ -685,7 +687,7 @@ static void fm_create(
 	mode_t mode,
 	struct fuse_file_info *fi
 ) {
-	if (0 == strcmp(name, DOT_FUSERMAKE))
+	if (0 == strcmp(name, DOT_FUSEMAKE))
 		return (void)fuse_reply_err(req, ENOTSUP);
 	DEBUG("fm_create\n");
 	if (parent == 1)
@@ -808,7 +810,7 @@ static void fm_statfs(fuse_req_t req, fuse_ino_t ino) {
 	if (ino != 1)
 		res = statvfs(inode(fuse2ino(ino))->path, &stbuf);
 	else
-		res = statvfs(project_root, &stbuf);
+		res = statvfs(ROOT, &stbuf);
 	if (res == -1)
 		fuse_reply_err(req, errno);
 	else
@@ -949,8 +951,8 @@ static void fm_setxattr(
 	ssize_t ret;
 	if (ino == 1)
 		return (void)fuse_reply_err(req, ENOTSUP);
-  // REMEMBER: ino will be the directory and name the dependent file.
-	if (0 != strcmp(name, "fusemake.depend"))
+	// REMEMBER: ino will be the directory and name the dependent file.
+	if (0 != strcmp(name, DEPEND_ATTR))
 		return (void)fuse_reply_err(req, 0);
 	ret = setxattr(inode(fuse2ino(ino))->path, name, value, size, flags);
 	fuse_reply_err(req, ret == -1 ? errno : 0);
@@ -1063,45 +1065,186 @@ static const struct fuse_lowlevel_ops fm_oper = {
 	.lseek = fm_lseek,
 };
 
-// Arguments:
-// --init builder: initialise the current directory for building with builder.
-// --dpepend <args>: within the build process, declare a dependency on each of
-// args and write them to stdout on newlines.
-// --depend: without arguments, use lines from stdin.
+#define MOUNT_POINT DOT_FUSEMAKE "/mount"
+#define BUILDER DOT_FUSEMAKE "/builder"
 static char *fuse_args[] = { "fusemake" };
+void validate_executable(const char *builder) {
+	int ret;
+	if (access(builder, X_OK) != 0) {
+		ret = errno;
+		eprintf("Builder %s not found or not executable.\n", builder);
+		exit(ret);
+	}
+}
+#define IO_ERROR "IO error.\n"
+#define CHECK_IO(op, ...) \
+	{ \
+		if (!(op)) { \
+			int ret = errno; \
+			eprintf(__VA_ARGS__); \
+			exit(ret); \
+		} \
+	}
+void chdir_to_root() {
+	static char path[PATH_MAX];
+	CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
+	int depth = 1;
+	// Ignore trailing /
+	for (int i = 0; path[i] != '\0' && path[i + 1] != '\0'; ++i)
+		depth += path[i] == '/';
+	for (; depth >= 0; --depth) {
+		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK))
+			return;
+		else if (errno != ENOENT)
+			CHECK_IO(false, IO_ERROR);
+	}
+	eprintf("Could not find .fusemake directory.\nHave you initialised your "
+	        "project with fusemake --init <builder>?\n");
+	exit(ENOENT);
+}
+void depend(char *path) {
+	static char dot[] = ".";
+	char *dir = path, *name = strrchr(path, '/');
+	if (path[0] == '\0') {
+		eprintf("Error, empty argument.\n");
+		return;
+	}
+	if (name == NULL) {
+		dir = dot;
+		name = path;
+	} else {
+		*(name++) = '\0';
+	}
+	CHECK_IO(
+		0 == setxattr(dir, DEPEND_ATTR, name, strlen(name), 0),
+		"Could not access file %s/%s.\n",
+		dir,
+		name
+	);
+	if (dir != dot)
+		*(--name) = '/';
+	printf("%s\n", path);
+}
 int main(int argc, char *argv[]) {
-	struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
-	struct fuse_session *se;
+#define CHECK_3_ARGS(OP) \
+	if (argc != 3) { \
+		fprintf( \
+			stderr, \
+			"Too many arguments to fusemake " OP ".\n" \
+			"\tUsage: fusemake " OP " /path/to/builder\n" \
+		); \
+		return E2BIG; \
+	}
 	int ret = -1;
+	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
+		char *arguments[][2] = {
+			{ "--init <builder>",
+			  "Initialise the current directory for building with builder." },
+			{ "--set-builder <builder>", "Set the builder." },
+			{ "--dpepend <args>",
+			  "Build each of args asynchronously and write them to stdout." },
+			{ "--depend", "Without arguments, use lines from stdin." },
+		};
+		printf("Usage: fusemake <targes>\n"
+		       "Build the listed targets incrementally.\n"
+		       "\n");
+		int width = 0;
+		for (int i = 0; i < LENGTH(arguments); ++i)
+			width = MAX(width, strlen(arguments[i][0]));
+		for (int i = 0; i < LENGTH(arguments); ++i)
+			printf("\t%-*s%s\n", width + 4, arguments[i][0], arguments[i][1]);
+	} else if (argc > 1 && 0 == strcmp(argv[1], "--init")) {
+		CHECK_3_ARGS("--init");
+		validate_executable(BUILDER);
+#define MKDIR(DIR) \
+	if (-1 == mkdir(DIR, 0755)) { \
+		ret = errno; \
+		if (errno == EEXIST) \
+			fprintf( \
+				stderr, \
+				"Fusemake already initialised in this directory.\nDid you " \
+				"mean --set-builder?\n" \
+			); \
+		else \
+			fprintf( \
+				stderr, \
+				"Error creating directory %s, please remove .fusemake and " \
+				"try again.\n", \
+				DIR \
+			); \
+		return ret; \
+	}
+		MKDIR("/" DOT_FUSEMAKE);
+		MKDIR("/" MOUNT_POINT);
+		if (-1 == symlink(argv[2], BUILDER)) {
+			ret = errno;
+			fprintf(
+				stderr,
+				"Error creating symlink %s, please remove .fusermake and try "
+				"again.\n",
+				BUILDER
+			);
+			return ret;
+		}
+	} else if (argc > 1 && 0 == strcmp(argv[1], "--set-builder")) {
+		char builder[PATH_MAX];
+		CHECK_3_ARGS("--set-builder")
+		validate_executable(argv[2]);
+		CHECK_IO(NULL != realpath(argv[2], builder), IO_ERROR);
+		chdir_to_root();
+		CHECK_IO(
+			0 == symlink(builder, BUILDER),
+			"IO error, failed to symlink builder.\n"
+		);
+	} else if (argc > 1 && 0 == strcmp(argv[1], "--depend")) {
+		if (argc >= 3) {
+			for (int i = 2; i < argc; ++i)
+				depend(argv[i]);
+		} else {
+			char *line = NULL;
+			size_t line_len;
+			for (;;) {
+				errno = 0;
+				if (0 == getline(&line, &line_len, stdin)) {
+					CHECK_IO(errno == 0, IO_ERROR);
+					break;
+				}
+				depend(line);
+			}
+			free(line);
+		}
+	} else {
+		chdir_to_root();
+		validate_executable(BUILDER);
+		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
+		struct fuse_session *se;
 
-	/* Don't mask creation mode, kernel already did that */
-	umask(0);
-	getcwd(project_root, LENGTH(project_root));
-	project_root_name = strrchr(project_root, '/') + 1;
-	char *mountpoint = ".fusemake/mount";
-	add_root(0);
+		/* Don't mask creation mode, kernel already did that */
+		umask(0);
+		add_root(0);
 
-	se = fuse_session_new(&args, &fm_oper, sizeof(fm_oper), NULL);
-	if (se == NULL)
-		goto err_out1;
+		se = fuse_session_new(&args, &fm_oper, sizeof(fm_oper), NULL);
+		if (se == NULL)
+			goto err_out1;
 
-	if (fuse_set_signal_handlers(se) != 0)
-		goto err_out2;
+		if (fuse_set_signal_handlers(se) != 0)
+			goto err_out2;
 
-	if (fuse_session_mount(se, mountpoint) != 0)
-		goto err_out3;
+		if (fuse_session_mount(se, MOUNT_POINT) != 0)
+			goto err_out3;
 
-	fuse_daemonize(1);
+		fuse_daemonize(1);
 
-	ret = fuse_session_loop(se);
+		ret = fuse_session_loop(se);
 
-	fuse_session_unmount(se);
-err_out3:
-	fuse_remove_signal_handlers(se);
-err_out2:
-	fuse_session_destroy(se);
-err_out1:
-	fuse_opt_free_args(&args);
+		fuse_session_unmount(se);
+	err_out3:
+		fuse_remove_signal_handlers(se);
+	err_out2:
+		fuse_session_destroy(se);
+	err_out1:
+		fuse_opt_free_args(&args);
 
-	return ret ? 1 : 0;
+		return ret ? 1 : 0;
+	}
 }
