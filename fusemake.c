@@ -824,7 +824,7 @@ static void fm_fallocate(
 	struct fuse_file_info *fi
 ) {
 	DEBUG("fm_fallocate\n");
-	int err = EOPNOTSUPP;
+	int err = ENOTSUP;
 	if (ino == 1)
 		return (void)fuse_reply_err(req, err);
 
@@ -835,7 +835,7 @@ static void fm_fallocate(
 
 #elif defined(HAVE_POSIX_FALLOCATE)
 	if (mode)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
+		return (void)fuse_reply_err(req, ENOTSUP);
 	err = posix_fallocate(fi->fh, offset, length);
 #endif
 
@@ -847,7 +847,7 @@ fm_flock(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi, int op) {
 	DEBUG("fm_flock\n");
 	int res;
 	if (ino == 1)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
+		return (void)fuse_reply_err(req, ENOTSUP);
 
 	res = flock(fi->fh, op);
 
@@ -861,7 +861,7 @@ fm_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size) {
 	ssize_t ret;
 	int saverr;
 	if (ino == 1)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
+		return (void)fuse_reply_err(req, ENOTSUP);
 
 	saverr = ENOSYS;
 
@@ -902,7 +902,7 @@ static void fm_listxattr(fuse_req_t req, fuse_ino_t ino, size_t size) {
 	ssize_t ret;
 	int saverr;
 	if (ino == 1)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
+		return (void)fuse_reply_err(req, ENOTSUP);
 
 	saverr = ENOSYS;
 
@@ -948,8 +948,9 @@ static void fm_setxattr(
 	DEBUG("fm_setxattr\n");
 	ssize_t ret;
 	if (ino == 1)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
-	if (0 == strcmp(name, "fusemake.depend"))
+		return (void)fuse_reply_err(req, ENOTSUP);
+  // REMEMBER: ino will be the directory and name the dependent file.
+	if (0 != strcmp(name, "fusemake.depend"))
 		return (void)fuse_reply_err(req, 0);
 	ret = setxattr(inode(fuse2ino(ino))->path, name, value, size, flags);
 	fuse_reply_err(req, ret == -1 ? errno : 0);
@@ -959,7 +960,7 @@ static void fm_removexattr(fuse_req_t req, fuse_ino_t ino, const char *name) {
 	DEBUG("fm_removexattr\n");
 	ssize_t ret;
 	if (ino == 1)
-		return (void)fuse_reply_err(req, EOPNOTSUPP);
+		return (void)fuse_reply_err(req, ENOTSUP);
 	ret = removexattr(inode(fuse2ino(ino))->path, name);
 	fuse_reply_err(req, ret == -1 ? errno : 0);
 }
