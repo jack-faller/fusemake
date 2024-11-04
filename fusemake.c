@@ -171,7 +171,9 @@ Ino ino_child(Ino parent, const char *name) {
 // TODO: remember to handle symlinked dependencies.
 // TODO: remember to block for dependencies.
 
-static void fm_init(void *userdata, struct fuse_conn_info *conn) {}
+static void fm_init(void *userdata, struct fuse_conn_info *conn) {
+	DEBUG("fm_init\n");
+}
 
 static void fm_destroy(void *userdata) {
 	DEBUG("fm_destroy\n");
@@ -722,7 +724,6 @@ static void fm_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	if (ino == 1)
 		return (void)fuse_reply_err(req, EISDIR);
 	int err = fm_do_open(fuse2ino(ino), 0, fi);
-  DEBUG("%d\n", err);
 	if (err == 0)
 		fuse_reply_open(req, fi);
 	else
