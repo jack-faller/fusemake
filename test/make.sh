@@ -1,16 +1,13 @@
 #!/bin/sh
 set -e
-OUT="$1"
-RECUR="$0"
+RECUR="$0" OUT="$1"
 depend_one () { mkdir -p "$(dirname "$1")"; "$RECUR" "$1"; echo "$1"; }
-depend () {
-	fusemake --depend "$@" ||
-		if [ "$#" = "0" ];
-		then while read -r dep; do depend_one "$dep"; done
-		else for dep in "$@"; do depend_one "$dep"; done; fi
-}
+which fusemake 2> /dev/null || fusemake () # Backup version of fusemake.
+{ if [ "$#" = 1 ]; then while read -r dep; do depend_one "$dep"; done
+  else shift; for dep in "$@"; do depend_one "$dep"; done; fi }
+depend () { fusemake --depend "$@"; }
 run () { xargs --verbose -d'\n' "$@"; }
-rewrap () { sed "s#$1\(.*\)$2#$3\1$4#"; } # rewrap a b c d maps a(.*)b to c\1d
+rewrap () { sed "s#$1\(.*\)$2#$3\1$4#"; } # Rewrap a b c d maps a(.*)b to c\1d.
 basic () { echo "$OUT" | rewrap "$1" "$2" "$3" "$4"; }
 
 case "$OUT" in

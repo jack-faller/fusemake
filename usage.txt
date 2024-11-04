@@ -1,0 +1,12 @@
+Usage: fusemake <targets>
+Build the listed targets incrementally.
+  Dependency information about build products is determined by using a fuse
+file-system to track which files are accessed by the build process. The script
+assigned to builder upon initialisation is expected to take the name of the
+desired build product (which could be a directory) as its soul argument. The
+script will be executed in a copy of the project root directory that passes
+through requests to the base file system. Only reads and writes made through
+this directory are logged.
+  $FUSEMAKE_NO_DEPEND is set to the full path of the project root. Accesses made
+through this path cannot be tracked by FuseMake and will therefore not cause
+rebuilds when changes are made to the dependency.

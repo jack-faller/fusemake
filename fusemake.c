@@ -2,6 +2,7 @@
   Based on the pass-through example given by libfuse.
 */
 // TODO: error handling on reply functions.
+// TODO: zero argument version of --init that creates a skeleton make.sh.
 
 #define FUSE_USE_VERSION 34
 
@@ -20,6 +21,8 @@
 #include <sys/param.h>
 #include <sys/xattr.h>
 #include <unistd.h>
+
+#include "string_defs.h"
 
 #define DEPEND_ATTR "fusemake.depend"
 #define LENGTH(ARRAY) (sizeof(ARRAY) / sizeof((ARRAY)[0]))
@@ -64,7 +67,7 @@ typedef struct Inode_List {
 } Inode_List;
 
 Inode_List processes[PROCESS_MAX];
-int processes_len;
+int processes_len, active_processes;
 char *builder_path;
 
 void ino_ref(Ino ino, int count) { processes[ino.process].lookup += count; }
@@ -1091,10 +1094,13 @@ void chdir_to_root() {
 	for (int i = 0; path[i] != '\0' && path[i + 1] != '\0'; ++i)
 		depth += path[i] == '/';
 	for (; depth >= 0; --depth) {
-		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK))
+		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK)) {
+			CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
+			setenv("FUSEMAKE_NO_DEPEND", path, true);
 			return;
-		else if (errno != ENOENT)
+		} else if (errno != ENOENT) {
 			CHECK_IO(false, IO_ERROR);
+		}
 	}
 	eprintf("Could not find .fusemake directory.\nHave you initialised your "
 	        "project with fusemake --init <builder>?\n");
@@ -1167,9 +1173,7 @@ int main(int argc, char *argv[]) {
 			while (parameters_flat[i++] != NULL)
 				;
 		}
-		printf("Usage: fusemake <targes>\n"
-		       "Build the listed targets incrementally.\n"
-		       "\n");
+		printf("%s\n", usage);
 		int width_1 = 0, width_2 = 0;
 		for (int i = 0; i < parameter_count; ++i)
 			width_1 = MAX(width_1, strlen(parameters[i][0])),
@@ -1209,7 +1213,7 @@ int main(int argc, char *argv[]) {
 			ret = errno;
 			fprintf(
 				stderr,
-				"Error creating symlink %s, please remove .fusermake and try "
+				"Error creating symlink %s, please remove .fusemake and try "
 				"again.\n",
 				BUILDER
 			);
@@ -1243,6 +1247,7 @@ int main(int argc, char *argv[]) {
 			free(line);
 		}
 	} else {
+		active_processes = sysconf(_SC_NPROCESSORS_ONLN);
 		chdir_to_root();
 		validate_executable(BUILDER);
 		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
