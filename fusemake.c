@@ -2,9 +2,7 @@
   Based on the pass-through example given by libfuse.
 */
 // TODO: error handling on reply functions.
-// TODO: refuse access to mount dir to avoid circular directory structure.
 
-#define _GNU_SOURCE
 #define FUSE_USE_VERSION 34
 
 #include <assert.h>
@@ -1137,22 +1135,53 @@ int main(int argc, char *argv[]) {
 	}
 	int ret = -1;
 	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
-		char *arguments[][2] = {
-			{ "--init <builder>",
-			  "Initialise the current directory for building with builder." },
-			{ "--set-builder <builder>", "Set the builder." },
-			{ "--dpepend <args>",
-			  "Build each of args asynchronously and write them to stdout." },
-			{ "--depend", "Without arguments, use lines from stdin." },
+		const static char *parameters_flat[] = {
+			"--depend",
+			"<args>",
+			"Build each of args asynchronously and write the names to stdout.",
+			"Should only be called during the build process.",
+			NULL,
+			"--depend",
+			"",
+			"Without arguments, use lines from stdin.",
+			NULL,
+			"--processes",
+			"<count>",
+			"Allow approximately count build processes.",
+			"Defaults to the number of processors on the device.",
+			NULL,
+			"--set-builder",
+			"<builder>",
+			"Set the builder.",
+			NULL,
+			"--init",
+			"<builder>",
+			"Initialise the current directory for building with builder.",
+			NULL,
 		};
+		static const char **parameters[LENGTH(parameters_flat)];
+		int parameter_count = 0;
+		for (int i = 0; i < LENGTH(parameters_flat);) {
+			parameters[parameter_count++] = &parameters_flat[i];
+			// Move to start of next sub-array.
+			while (parameters_flat[i++] != NULL)
+				;
+		}
 		printf("Usage: fusemake <targes>\n"
 		       "Build the listed targets incrementally.\n"
 		       "\n");
-		int width = 0;
-		for (int i = 0; i < LENGTH(arguments); ++i)
-			width = MAX(width, strlen(arguments[i][0]));
-		for (int i = 0; i < LENGTH(arguments); ++i)
-			printf("\t%-*s%s\n", width + 4, arguments[i][0], arguments[i][1]);
+		int width_1 = 0, width_2 = 0;
+		for (int i = 0; i < parameter_count; ++i)
+			width_1 = MAX(width_1, strlen(parameters[i][0])),
+			width_2 = MAX(width_2, strlen(parameters[i][1]));
+		for (int i = 0; i < parameter_count; ++i) {
+#define LINE(A, B, C) \
+	printf("  %-*s%-*s%s\n", width_1 + 1, A, width_2 + 2, B, C);
+			LINE(parameters[i][0], parameters[i][1], parameters[i][2]);
+			for (int j = 3; parameters[i][j] != NULL; ++j)
+				LINE("", "", parameters[i][j]);
+#undef LINE
+		}
 	} else if (argc > 1 && 0 == strcmp(argv[1], "--init")) {
 		CHECK_3_ARGS("--init");
 		validate_executable(BUILDER);
@@ -1233,7 +1262,7 @@ int main(int argc, char *argv[]) {
 		if (fuse_session_mount(se, MOUNT_POINT) != 0)
 			goto err_out3;
 
-		fuse_daemonize(1);
+		fuse_daemonize(true);
 
 		ret = fuse_session_loop(se);
 
