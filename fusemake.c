@@ -496,12 +496,12 @@ static void
 fm_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	DIR *fd;
 	if (ino != 1) {
-		const char *path = inode(fuse2ino(ino))->path;
-		DEBUG("fm_opendir %s\n", path);
-		fd = opendir(path);
-		inode(fuse2ino(ino))->opened = true;
+		Inode *i = inode(fuse2ino(ino));
+		DEBUG("fm_opendir %s\n", i->path);
+		fd = opendir(i->path);
 		if (fd == NULL)
 			return (void)fuse_reply_err(req, errno);
+		i->opened = true;
 		fi->fh = (typeof(fi->fh))fd;
 	} else {
 		DEBUG("fm_opendir root\n");
@@ -672,6 +672,7 @@ static int fm_do_open(Ino ino, mode_t mode, struct fuse_file_info *fi) {
 	int fd = open(inode(ino)->path, fi->flags & ~O_NOFOLLOW, mode);
 	if (fd == -1)
 		return errno;
+	inode(ino)->opened = true;
 	fi->fh = fd;
 	fi->direct_io = 1;
 	return 0;
