@@ -11,25 +11,25 @@ rewrap () { sed "s#$1\(.*\)$2#$3\1$4#"; } # Rewrap a b c d maps a(.*)b to c\1d.
 basic () { echo "$OUT" | rewrap "$1" "$2" "$3" "$4"; }
 
 case "$OUT" in
-	build/*.tab.h) basic "" .h "" .c         | depend ;;
-	build/*.tab.c) basic build/ .tab.c "" .y | run bison -H -o "$OUT" ;;
-	build/*.ll.c)  basic build/ .ll.c "" .l  | run flex -o "$OUT" ;;
-	build/*.o)     basic build/ .o "" .c     | run gcc -o "$OUT" -c ;;
-	build/*-main.c)
-		FUNC="$(basic 'build/' '-main.c' '' _main)"
+	out/*.tab.h) basic "" .h "" .c         | depend ;;
+	out/*.tab.c) basic out/ .tab.c "" .y | run bison -H -o "$OUT" ;;
+	out/*.ll.c)  basic out/ .ll.c "" .l  | run flex -o "$OUT" ;;
+	out/*.o)     basic out/ .o "" .c     | run gcc -o "$OUT" -c ;;
+	out/*-main.c)
+		FUNC="$(basic 'out/' '-main.c' '' _main)"
 		echo "int $FUNC(int argc, char **argv);
 int main(int argc, char **argv) { return $FUNC(argc, argv); }" > "$OUT"
 		;;
 	exe | test)
-		find src -name '*.y' | rewrap "" .y build/ .tab.h | depend
-		find src -name '*.l' | rewrap "" .y build/ .ll.c | depend
-		depend "build/$OUT-main.c"
-		(find src -name '*.c'; echo "build/$OUT-main.c") |
-			rewrap "" .c build/ .o | depend | run gcc -o "$OUT"
+		find src -name '*.y' | rewrap "" .y out/ .tab.h | depend
+		find src -name '*.l' | rewrap "" .y out/ .ll.c | depend
+		depend "out/$OUT-main.c"
+		(find src -name '*.c'; echo "out/$OUT-main.c") |
+			rewrap "" .c out/ .o | depend | run gcc -o "$OUT"
 		;;
 	# Directory rules.
-	build) mkdir -p build ;;
-	build/*)
-		[ -d "$(basic build/ '' '' '')" ] && mkdir "$OUT"
+	out) mkdir -p out ;;
+	out/*)
+		[ -d "$(basic out/ '' '' '')" ] && mkdir "$OUT"
 		;;
 esac

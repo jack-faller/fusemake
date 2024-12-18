@@ -1,20 +1,11 @@
-/*
-  Based on the pass-through example given by libfuse.
-*/
-// TODO: error handling on reply functions.
-// TODO: zero argument version of --init that creates a skeleton make.sh.
-
-#define FUSE_USE_VERSION 34
+#include "header.h"
 
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
-#include <fuse_lowlevel.h>
 #include <limits.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
@@ -22,55 +13,6 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
-#include "string_defs.h"
-
-#define DEPEND_ATTR "fusemake.depend"
-#define LENGTH(ARRAY) (sizeof(ARRAY) / sizeof((ARRAY)[0]))
-#define DOT_FUSEMAKE ".fusemake"
-
-#define eprintf(...) fprintf(stderr, __VA_ARGS__)
-#define DEBUG(...) eprintf(__VA_ARGS__)
-
-#define PROCESS_MAX (1 << 16)
-// Inode one the root, so shift ino to exclude zero and one.
-#define INO_PROCESS(ino) (((ino) - 2) % PROCESS_MAX)
-#define INO_ID(ino) (((ino) - 2) / PROCESS_MAX)
-#define INO(process, id) ((id) * PROCESS_MAX + (process) + 2)
-typedef struct Ino {
-	int process;
-	int id;
-} Ino;
-Ino fuse2ino(fuse_ino_t ino) {
-	return (Ino) { .process = INO_PROCESS(ino), .id = INO_ID(ino) };
-}
-fuse_ino_t ino2fuse(Ino ino) { return INO(ino.process, ino.id); }
-
-typedef struct Inode {
-	// Canonical path in project root (allocated).
-	char *path;
-	// Reference to the file name portion of path.
-	char *name;
-	// References to other inodes in this directory (INO_IDs of files).
-	// 0 to indicate absence (no hard links exist to the rood directory).
-	int parent, next, prev, child;
-	// 0 if closed.
-	int fd;
-	bool exists;
-	bool opened;
-} Inode;
-typedef struct Inode_List {
-	Inode *list;
-	// Lookup is the count of active lookups from the kernel.
-	// Presses shouldn't be replaced until this drops to zero.
-	int length, capacity, generation, lookup;
-	bool active;
-} Inode_List;
-
-Inode_List processes[PROCESS_MAX];
-int processes_len, active_processes;
-char *builder_path;
-
-void ino_ref(Ino ino, int count) { processes[ino.process].lookup += count; }
 // Use these instead of the fuse versions to handle lookups.
 int fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
 	printf("fm_reply_entry\n");
@@ -88,92 +30,6 @@ int fm_reply_create(
 	return fuse_reply_create(req, e, fi);
 }
 
-Inode *inode(Ino ino) { return &processes[ino.process].list[ino.id]; }
-
-Ino ino_parent(Ino child) {
-	child.id = inode(child)->parent;
-	return child;
-}
-char ROOT[] = ".";
-Ino add_root(int process) {
-	const int initial_cap = 16;
-	processes_len = MAX(process + 1, processes_len);
-	processes[process] = (Inode_List) {
-		.list = malloc(sizeof(Inode) * initial_cap),
-		.length = 1,
-		.capacity = initial_cap,
-		.active = true,
-		.generation = processes[process].generation + 1,
-	};
-	Inode *out = &processes[process].list[0];
-	*out = (Inode) {
-		.path = ROOT,
-		.name = ROOT,
-	};
-	return (Ino) { .id = 0, .process = process };
-}
-
-int count_active_processes() {
-	int out = 0;
-	for (int i = 0; i < processes_len; ++i) {
-		out += processes[i].active;
-	}
-	return out;
-}
-
-Ino ino_add_child(Ino parent, const char *name) {
-	Inode_List *proc = &processes[parent.process];
-	int cap = proc->capacity;
-	if (cap == proc->length) {
-		cap += cap / 2;
-		proc->list = reallocarray(proc->list, cap, sizeof(*proc->list));
-		proc->capacity = cap;
-	}
-
-	int p_len = strlen(inode(parent)->path);
-	int name_len = strlen(name);
-	char *path = malloc(p_len + 1 + name_len + 1);
-	sprintf(path, "%s/%s", inode(parent)->path, name);
-	Ino out_ino = { .process = parent.process, .id = proc->length };
-	Inode *out = &proc->list[proc->length++];
-	*out = (Inode) {
-		.name = &path[p_len + 1],
-		.path = path,
-		.parent = parent.id,
-		.next = inode(parent)->child,
-	};
-	if (inode(parent)->child != 0) {
-		proc->list[inode(parent)->child].prev = out_ino.id;
-	}
-	inode(parent)->child = out_ino.id;
-
-	return out_ino;
-}
-
-Ino ino_get_child(Ino parent, const char *name, bool *found) {
-	Inode_List *proc = &processes[parent.process];
-	Inode *c;
-	for (int child = inode(parent)->child; child != 0; child = c->next) {
-		c = &proc->list[child];
-		if (0 == strcmp(name, c->name)) {
-			*found = true;
-			return (Ino) { .id = child, .process = parent.process };
-		}
-	}
-	*found = false;
-	return (Ino) {};
-}
-Ino ino_child(Ino parent, const char *name) {
-	bool found;
-	Ino out = ino_get_child(parent, name, &found);
-	if (!found)
-		out = ino_add_child(parent, name);
-	return out;
-}
-
-// TODO: remember to handle symlinked dependencies.
-// TODO: remember to block for dependencies.
-
 static void fm_init(void *userdata, struct fuse_conn_info *conn) {
 	DEBUG("fm_init\n");
 }
@@ -189,12 +45,12 @@ fm_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	if (ino == 1) {
 		DEBUG("fm_getattr root\n");
 		buf.st_mode = S_IFDIR | 0755;
-		buf.st_nlink = count_active_processes() + 2;
+		buf.st_nlink = count_active_roots() + 2;
 	} else {
 		Inode *i = inode(fuse2ino(ino));
-		DEBUG("fm_getattr %s\n", i->path);
+		DEBUG("fm_getattr %s\n", inode_path(i));
 
-		int res = lstat(i->path, &buf);
+		int res = lstat(inode_path(i), &buf);
 		if (res == -1)
 			return (void)fuse_reply_err(req, errno);
 	}
@@ -216,7 +72,7 @@ static void fm_setattr(
 	int res;
 
 	if (to_set & FUSE_SET_ATTR_MODE) {
-		res = chmod(i->path, attr->st_mode);
+		res = chmod(inode_path(i), attr->st_mode);
 		if (res == -1)
 			goto out_err;
 	}
@@ -224,12 +80,12 @@ static void fm_setattr(
 		uid_t uid = (to_set & FUSE_SET_ATTR_UID) ? attr->st_uid : (uid_t)-1;
 		gid_t gid = (to_set & FUSE_SET_ATTR_GID) ? attr->st_gid : (gid_t)-1;
 
-		res = lchown(i->path, uid, gid);
+		res = lchown(inode_path(i), uid, gid);
 		if (res == -1)
 			goto out_err;
 	}
 	if (to_set & FUSE_SET_ATTR_SIZE) {
-		res = truncate(i->path, attr->st_size);
+		res = truncate(inode_path(i), attr->st_size);
 		if (res == -1)
 			goto out_err;
 	}
@@ -251,7 +107,7 @@ static void fm_setattr(
 		else if (to_set & FUSE_SET_ATTR_MTIME)
 			tv[1] = attr->st_mtim;
 
-		res = utimensat(0, i->path, tv, AT_SYMLINK_NOFOLLOW);
+		res = utimensat(0, inode_path(i), tv, AT_SYMLINK_NOFOLLOW);
 		if (res == -1)
 			goto out_err;
 	}
@@ -264,19 +120,18 @@ out_err:
 
 static void fill_entry_ino(Ino ino, struct fuse_entry_param *e) {
 	e->ino = ino2fuse(ino);
-	e->generation = processes[ino.process].generation;
+	e->generation = ino_generation(ino);
 }
 static int fill_entry(Ino ino, struct fuse_entry_param *e) {
 	int res;
 
 	memset(e, 0, sizeof(*e));
-	res = lstat(inode(ino)->path, &e->attr);
-	DEBUG("fill_entry %s\n", inode(ino)->path);
+	res = lstat(inode_path(inode(ino)), &e->attr);
+	DEBUG("fill_entry %s\n", inode_path(inode(ino)));
 
 	if (res == -1)
 		goto out_err;
 
-	inode(ino)->exists = true;
 	fill_entry_ino(ino, e);
 
 	return 0;
@@ -295,22 +150,22 @@ static void fm_lookup(fuse_req_t req, fuse_ino_t parent, const char *name) {
 		DEBUG("fm_lookup root %s\n", name);
 		if (*name == '\0')
 			return (void)fuse_reply_err(req, ENOENT);
-		int process = 0;
+		int root = 0;
 		for (; *name != '\0'; ++name) {
 			if ('0' <= *name && *name <= '9') {
-				process *= 10;
-				process += *name - '0';
+				root *= 10;
+				root += *name - '0';
 			} else {
 				return (void)fuse_reply_err(req, ENOENT);
 			}
 		}
-		if (processes[process].active)
-			child = (Ino) { .id = 0, .process = process };
+		if (root_active(root))
+			child = (Ino) { .id = 0, .process = root };
 		else
 			return (void)fuse_reply_err(req, ENOENT);
 	} else {
 		child = ino_child(fuse2ino(parent), name);
-		DEBUG("fm_lookup %s\n", inode(child)->path);
+		DEBUG("fm_lookup %s\n", inode_path(inode(child)));
 	}
 	err = fill_entry(child, &e);
 	if (err)
@@ -337,9 +192,9 @@ static void fm_mknod_symlink(
 	struct fuse_entry_param e;
 
 	if (link == NULL) {
-		res = mknod(inode(child)->path, mode, rdev);
+		res = mknod(inode_path(inode(child)), mode, rdev);
 	} else {
-		res = symlink(inode(child)->path, link);
+		res = symlink(inode_path(inode(child)), link);
 	}
 
 	if (res == -1)
@@ -390,7 +245,7 @@ fm_link(fuse_req_t req, fuse_ino_t ino, fuse_ino_t parent, const char *name) {
 
 	memset(&e, 0, sizeof(struct fuse_entry_param));
 
-	res = link(inode(from)->path, inode(to)->path);
+	res = link(inode_path(inode(from)), inode_path(inode(to)));
 	if (res == -1)
 		goto out_err;
 
@@ -414,7 +269,7 @@ static void fm_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
 		return (void)fuse_reply_err(req, EPERM);
 	Ino ino = ino_child(fuse2ino(parent), name);
 
-	res = rmdir(inode(ino)->path);
+	res = rmdir(inode_path(inode(ino)));
 
 	fuse_reply_err(req, res == -1 ? errno : 0);
 }
@@ -439,7 +294,7 @@ static void fm_rename(
 	Ino old = ino_child(fuse2ino(parent), name);
 	Ino new = ino_child(fuse2ino(newparent), newname);
 
-	res = rename(inode(old)->path, inode(new)->path);
+	res = rename(inode_path(inode(old)), inode_path(inode(new)));
 
 	fuse_reply_err(req, res == -1 ? errno : 0);
 }
@@ -451,13 +306,15 @@ static void fm_unlink(fuse_req_t req, fuse_ino_t parent, const char *name) {
 	int res;
 	if (parent == 1)
 		return (void)fuse_reply_err(req, EPERM);
-	res = unlink(inode(ino_child(fuse2ino(parent), name))->path);
+	res = unlink(inode_path(inode(ino_child(fuse2ino(parent), name))));
 
 	fuse_reply_err(req, res == -1 ? errno : 0);
 }
 
 static void fm_forget_n(fuse_ino_t ino, uint64_t nlookup) {
-	DEBUG("fm_forget_n %d %s\n", (int)nlookup, inode(fuse2ino(ino))->path);
+	DEBUG(
+		"fm_forget_n %d %s\n", (int)nlookup, inode_path(inode(fuse2ino(ino)))
+	);
 	if (ino != 1)
 		ino_ref(fuse2ino(ino), -nlookup);
 }
@@ -483,7 +340,7 @@ static void fm_readlink(fuse_req_t req, fuse_ino_t ino) {
 	if (ino == 1)
 		return (void)fuse_reply_err(req, EINVAL);
 
-	res = readlink(inode(fuse2ino(ino))->path, buf, sizeof(buf));
+	res = readlink(inode_path(inode(fuse2ino(ino))), buf, sizeof(buf));
 	if (res == -1)
 		return (void)fuse_reply_err(req, errno);
 
@@ -500,11 +357,10 @@ fm_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	DIR *fd;
 	if (ino != 1) {
 		Inode *i = inode(fuse2ino(ino));
-		DEBUG("fm_opendir %s\n", i->path);
-		fd = opendir(i->path);
+		DEBUG("fm_opendir %s\n", inode_path(i));
+		fd = opendir(inode_path(i));
 		if (fd == NULL)
 			return (void)fuse_reply_err(req, errno);
-		i->opened = true;
 		fi->fh = (typeof(fi->fh))fd;
 	} else {
 		DEBUG("fm_opendir root\n");
@@ -532,7 +388,7 @@ static int fm_read_root(
 	struct stat stbuf;
 	if (plus) {
 		for (int i = 0; i < processes_len; ++i) {
-			if (processes[i].active) {
+			if (root_active(i)) {
 				fill_entry((Ino) { .id = 0, .process = i }, &e);
 				break;
 			}
@@ -543,7 +399,7 @@ static int fm_read_root(
 	}
 	size_t ent_size;
 	for (int i = offset; i < processes_len; ++i) {
-		if (!processes[i].active)
+		if (!root_active(i))
 			continue;
 		Ino ino = { .id = 0, .process = i };
 		char name[32];
@@ -671,11 +527,10 @@ fm_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 }
 
 static int fm_do_open(Ino ino, mode_t mode, struct fuse_file_info *fi) {
-	DEBUG("fm_do_open %s\n", inode(ino)->name);
-	int fd = open(inode(ino)->path, fi->flags & ~O_NOFOLLOW, mode);
+	DEBUG("fm_do_open %s\n", inode_path(inode(ino)));
+	int fd = open(inode_path(inode(ino)), fi->flags & ~O_NOFOLLOW, mode);
 	if (fd == -1)
 		return errno;
-	inode(ino)->opened = true;
 	fi->fh = fd;
 	fi->direct_io = 1;
 	return 0;
@@ -736,7 +591,7 @@ static void fm_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 
 static void
 fm_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
-	DEBUG("fm_release %s\n", inode(fuse2ino(ino))->path);
+	DEBUG("fm_release %s\n", inode_path(inode(fuse2ino(ino))));
 	close(fi->fh);
 	fuse_reply_err(req, 0);
 }
@@ -809,7 +664,7 @@ static void fm_statfs(fuse_req_t req, fuse_ino_t ino) {
 	struct statvfs stbuf;
 
 	if (ino != 1)
-		res = statvfs(inode(fuse2ino(ino))->path, &stbuf);
+		res = statvfs(inode_path(inode(fuse2ino(ino))), &stbuf);
 	else
 		res = statvfs(ROOT, &stbuf);
 	if (res == -1)
@@ -873,7 +728,7 @@ fm_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size) {
 		if (!value)
 			goto out_err;
 
-		ret = getxattr(inode(fuse2ino(ino))->path, name, value, size);
+		ret = getxattr(inode_path(inode(fuse2ino(ino))), name, value, size);
 		if (ret == -1)
 			goto out_err;
 		saverr = 0;
@@ -882,7 +737,7 @@ fm_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size) {
 
 		fuse_reply_buf(req, value, ret);
 	} else {
-		ret = getxattr(inode(fuse2ino(ino))->path, name, NULL, 0);
+		ret = getxattr(inode_path(inode(fuse2ino(ino))), name, NULL, 0);
 		if (ret == -1)
 			goto out_err;
 
@@ -914,7 +769,7 @@ static void fm_listxattr(fuse_req_t req, fuse_ino_t ino, size_t size) {
 		if (!value)
 			goto out_err;
 
-		ret = listxattr(inode(fuse2ino(ino))->path, value, size);
+		ret = listxattr(inode_path(inode(fuse2ino(ino))), value, size);
 		if (ret == -1)
 			goto out_err;
 		saverr = 0;
@@ -923,7 +778,7 @@ static void fm_listxattr(fuse_req_t req, fuse_ino_t ino, size_t size) {
 
 		fuse_reply_buf(req, value, ret);
 	} else {
-		ret = listxattr(inode(fuse2ino(ino))->path, NULL, 0);
+		ret = listxattr(inode_path(inode(fuse2ino(ino))), NULL, 0);
 		if (ret == -1)
 			goto out_err;
 
@@ -955,7 +810,12 @@ static void fm_setxattr(
 	// REMEMBER: ino will be the directory and name the dependent file.
 	if (0 != strcmp(name, DEPEND_ATTR))
 		return (void)fuse_reply_err(req, 0);
-	ret = setxattr(inode(fuse2ino(ino))->path, name, value, size, flags);
+	Ino i = fuse2ino(ino);
+	if (i.id == 0 && 0 == strcmp(name, TERMINATE_ATTR)) {
+		// TODO: implement this.
+		return (void)fuse_reply_err(req, 0);
+	}
+	ret = setxattr(inode_path(inode(i)), name, value, size, flags);
 	fuse_reply_err(req, ret == -1 ? errno : 0);
 }
 
@@ -964,7 +824,7 @@ static void fm_removexattr(fuse_req_t req, fuse_ino_t ino, const char *name) {
 	ssize_t ret;
 	if (ino == 1)
 		return (void)fuse_reply_err(req, ENOTSUP);
-	ret = removexattr(inode(fuse2ino(ino))->path, name);
+	ret = removexattr(inode_path(inode(fuse2ino(ino))), name);
 	fuse_reply_err(req, ret == -1 ? errno : 0);
 }
 
@@ -1025,7 +885,7 @@ static void fm_lseek(
 		fuse_reply_err(req, errno);
 }
 
-static const struct fuse_lowlevel_ops fm_oper = {
+const struct fuse_lowlevel_ops fm_oper = {
 	.init = fm_init,
 	.destroy = fm_destroy,
 	.lookup = fm_lookup,
@@ -1065,220 +925,3 @@ static const struct fuse_lowlevel_ops fm_oper = {
 #endif
 	.lseek = fm_lseek,
 };
-
-#define MOUNT_POINT DOT_FUSEMAKE "/mount"
-#define BUILDER DOT_FUSEMAKE "/builder"
-static char *fuse_args[] = { "fusemake" };
-void validate_executable(const char *builder) {
-	int ret;
-	if (access(builder, X_OK) != 0) {
-		ret = errno;
-		eprintf("Builder %s not found or not executable.\n", builder);
-		exit(ret);
-	}
-}
-#define IO_ERROR "IO error.\n"
-#define CHECK_IO(op, ...) \
-	{ \
-		if (!(op)) { \
-			int ret = errno; \
-			eprintf(__VA_ARGS__); \
-			exit(ret); \
-		} \
-	}
-void chdir_to_root() {
-	static char path[PATH_MAX];
-	CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
-	int depth = 1;
-	// Ignore trailing /
-	for (int i = 0; path[i] != '\0' && path[i + 1] != '\0'; ++i)
-		depth += path[i] == '/';
-	for (; depth >= 0; --depth) {
-		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK)) {
-			CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
-			setenv("FUSEMAKE_NO_DEPEND", path, true);
-			return;
-		} else if (errno != ENOENT) {
-			CHECK_IO(false, IO_ERROR);
-		}
-	}
-	eprintf("Could not find .fusemake directory.\nHave you initialised your "
-	        "project with fusemake --init <builder>?\n");
-	exit(ENOENT);
-}
-void depend(char *path) {
-	static char dot[] = ".";
-	char *dir = path, *name = strrchr(path, '/');
-	if (path[0] == '\0') {
-		eprintf("Error, empty argument.\n");
-		return;
-	}
-	if (name == NULL) {
-		dir = dot;
-		name = path;
-	} else {
-		*(name++) = '\0';
-	}
-	CHECK_IO(
-		0 == setxattr(dir, DEPEND_ATTR, name, strlen(name), 0),
-		"Could not access file %s/%s.\n",
-		dir,
-		name
-	);
-	if (dir != dot)
-		*(--name) = '/';
-	printf("%s\n", path);
-}
-int main(int argc, char *argv[]) {
-#define CHECK_3_ARGS(OP) \
-	if (argc != 3) { \
-		fprintf( \
-			stderr, \
-			"Too many arguments to fusemake " OP ".\n" \
-			"\tUsage: fusemake " OP " /path/to/builder\n" \
-		); \
-		return E2BIG; \
-	}
-	int ret = -1;
-	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
-		const static char *parameters_flat[] = {
-			"--depend",
-			"<args>",
-			"Build each of args asynchronously and write the names to stdout.",
-			"Should only be called during the build process.",
-			NULL,
-			"--depend",
-			"",
-			"Without arguments, use lines from stdin.",
-			NULL,
-			"--processes",
-			"<count>",
-			"Allow approximately count build processes.",
-			"Defaults to the number of processors on the device.",
-			NULL,
-			"--set-builder",
-			"<builder>",
-			"Set the builder.",
-			NULL,
-			"--init",
-			"<builder>",
-			"Initialise the current directory for building with builder.",
-			NULL,
-		};
-		static const char **parameters[LENGTH(parameters_flat)];
-		int parameter_count = 0;
-		for (int i = 0; i < LENGTH(parameters_flat);) {
-			parameters[parameter_count++] = &parameters_flat[i];
-			// Move to start of next sub-array.
-			while (parameters_flat[i++] != NULL)
-				;
-		}
-		printf("%s\n", usage);
-		int width_1 = 0, width_2 = 0;
-		for (int i = 0; i < parameter_count; ++i)
-			width_1 = MAX(width_1, strlen(parameters[i][0])),
-			width_2 = MAX(width_2, strlen(parameters[i][1]));
-		for (int i = 0; i < parameter_count; ++i) {
-#define LINE(A, B, C) \
-	printf("  %-*s%-*s%s\n", width_1 + 1, A, width_2 + 2, B, C);
-			LINE(parameters[i][0], parameters[i][1], parameters[i][2]);
-			for (int j = 3; parameters[i][j] != NULL; ++j)
-				LINE("", "", parameters[i][j]);
-#undef LINE
-		}
-	} else if (argc > 1 && 0 == strcmp(argv[1], "--init")) {
-		CHECK_3_ARGS("--init");
-		validate_executable(BUILDER);
-#define MKDIR(DIR) \
-	if (-1 == mkdir(DIR, 0755)) { \
-		ret = errno; \
-		if (errno == EEXIST) \
-			fprintf( \
-				stderr, \
-				"Fusemake already initialised in this directory.\nDid you " \
-				"mean --set-builder?\n" \
-			); \
-		else \
-			fprintf( \
-				stderr, \
-				"Error creating directory %s, please remove .fusemake and " \
-				"try again.\n", \
-				DIR \
-			); \
-		return ret; \
-	}
-		MKDIR("/" DOT_FUSEMAKE);
-		MKDIR("/" MOUNT_POINT);
-		if (-1 == symlink(argv[2], BUILDER)) {
-			ret = errno;
-			fprintf(
-				stderr,
-				"Error creating symlink %s, please remove .fusemake and try "
-				"again.\n",
-				BUILDER
-			);
-			return ret;
-		}
-	} else if (argc > 1 && 0 == strcmp(argv[1], "--set-builder")) {
-		char builder[PATH_MAX];
-		CHECK_3_ARGS("--set-builder")
-		validate_executable(argv[2]);
-		CHECK_IO(NULL != realpath(argv[2], builder), IO_ERROR);
-		chdir_to_root();
-		CHECK_IO(
-			0 == symlink(builder, BUILDER),
-			"IO error, failed to symlink builder.\n"
-		);
-	} else if (argc > 1 && 0 == strcmp(argv[1], "--depend")) {
-		if (argc >= 3) {
-			for (int i = 2; i < argc; ++i)
-				depend(argv[i]);
-		} else {
-			char *line = NULL;
-			size_t line_len;
-			for (;;) {
-				errno = 0;
-				if (0 == getline(&line, &line_len, stdin)) {
-					CHECK_IO(errno == 0, IO_ERROR);
-					break;
-				}
-				depend(line);
-			}
-			free(line);
-		}
-	} else {
-		active_processes = sysconf(_SC_NPROCESSORS_ONLN);
-		chdir_to_root();
-		validate_executable(BUILDER);
-		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
-		struct fuse_session *se;
-
-		/* Don't mask creation mode, kernel already did that */
-		umask(0);
-		add_root(0);
-
-		se = fuse_session_new(&args, &fm_oper, sizeof(fm_oper), NULL);
-		if (se == NULL)
-			goto err_out1;
-
-		if (fuse_set_signal_handlers(se) != 0)
-			goto err_out2;
-
-		if (fuse_session_mount(se, MOUNT_POINT) != 0)
-			goto err_out3;
-
-		fuse_daemonize(true);
-
-		ret = fuse_session_loop(se);
-
-		fuse_session_unmount(se);
-	err_out3:
-		fuse_remove_signal_handlers(se);
-	err_out2:
-		fuse_session_destroy(se);
-	err_out1:
-		fuse_opt_free_args(&args);
-
-		return ret ? 1 : 0;
-	}
-}

@@ -1,0 +1,22 @@
+// values are stored in the 0 byte index of the sub-table
+typedef void *sub_table[16];
+struct {
+  char *prefix; // null if empty
+  // cases for the final char of prefix
+  uint sub_tables[16];
+} tables[];
+sub_table sub_tables[];
+
+
+a file is out of date if:
+- it is missing
+- it has a dependency newer than its age
+
+unopened directories are only out of date if they are erased
+should also track inverse dependencies (for files and directories which don't exist)
+
+to simplify the build process, remove out of date files at the start
+only remove out of date files if they are part of the current build targets
+should be an option to remove all out of date files
+
+todo: automatically handle fuseless builds when fusermount not available
