@@ -1,0 +1,12 @@
+Have a actions program which arranges calls to builder programs.
+#+begin_src shell
+  # Actions
+  case "$0" in
+  	"run")
+  		fusemake build
+  		./out/exe "$@"
+  		;;
+  	"build")
+  		fusemake do-build $BUILDER.sh ./out/exe
+  esac
+#+end_src

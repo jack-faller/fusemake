@@ -7,7 +7,7 @@ struct Inode {
 	// Canonical path in project root (allocated).
 	char *path;
 	// Reference to the file name portion of path.
-	char *name;
+	const char *name;
 	// References to other inodes in this directory (INO_IDs of files).
 	// 0 to indicate absence (no hard links exist to the rood directory).
 	int parent, next, prev, child;
@@ -27,11 +27,10 @@ typedef struct ProcessRoot {
 
 ProcessRoot roots[PROCESS_MAX];
 int processes_len, active_processes;
-char ROOT[] = ".";
 ProcessRoot roots[PROCESS_MAX];
 
-char *inode_path(Inode *i) { return i->path; }
-char *inode_name(Inode *i) { return i->name; }
+const char *inode_path(Inode *i) { return i->path; }
+const char *inode_name(Inode *i) { return i->name; }
 int ino_generation(Ino ino) { return roots[ino.process].generation - 1; }
 bool root_active(int root) { return roots[root].active; }
 
@@ -68,7 +67,7 @@ found:
 	Inode *out = &roots[root].list[0];
 	*out = (Inode) {
 		.path = ROOT,
-		.name = ROOT,
+		.name = ROOT_NAME,
 	};
 	return (Ino) { .id = 0, .process = root };
 }

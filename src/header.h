@@ -1,3 +1,6 @@
+#ifndef HEADER
+#define HEADER
+
 #include <semaphore.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -36,23 +39,32 @@ typedef struct Inode Inode;
 extern const struct fuse_lowlevel_ops fm_oper;
 
 // process_manager.c
-extern sem_t process_available;
+void process_manager_init(int process_count);
+void process_manager_free();
 extern char *builder_path;
+typedef struct {
+	fuse_req_t request;
+} CallbackArgs;
+typedef void (*Callback)(CallbackArgs);
+void queue_build(Inode *i, Callback cb, CallbackArgs cb_args);
 
 // inode.c
 extern int processes_len, active_processes;
-extern char ROOT[];
 Ino fuse2ino(fuse_ino_t ino);
 fuse_ino_t ino2fuse(Ino ino);
 void ino_ref(Ino ino, int count);
 Ino add_root(const char *target);
 int count_active_roots();
 Inode *inode(Ino ino);
-char *inode_path(Inode *i);
-char *inode_name(Inode *i);
+const char *inode_path(Inode *i);
+const char *inode_name(Inode *i);
 int ino_generation(Ino ino);
 bool root_active(int root);
 Ino ino_child(Ino parent, const char *name);
 
 // fusemake.c
 /* void make(Inode *i, bool opened, callback); */
+extern char ROOT[];
+extern const char *ROOT_NAME;
+
+#endif

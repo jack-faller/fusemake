@@ -16,20 +16,8 @@
 
 #include "../out/string_defs.h"
 
-void *build(void *process_as_ptr) {
-	int process = (intptr_t)process_as_ptr;
-	chdir(MOUNT_POINT);
-	char buf[16];
-	sprintf(buf, "%d", process);
-	chdir(buf);
-	sem_wait(&process_available);
-	return NULL;
-}
-void spawn_build(const char *path) {
-	Ino root = add_root(path);
-	pthread_t thread;
-	pthread_create(&thread, NULL, build, (void *)(intptr_t)root.process);
-}
+char ROOT[PATH_MAX];
+const char *ROOT_NAME;
 
 // TODO: remember to handle symlinked dependencies.
 // TODO: remember to block for dependencies.
@@ -53,21 +41,21 @@ void validate_executable(const char *builder) {
 		} \
 	}
 void chdir_to_root() {
-	static char path[PATH_MAX];
-	CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
-	int depth = 1;
+	CHECK_IO(NULL != getcwd(ROOT, LENGTH(ROOT)), IO_ERROR);
+	int depth = 0;
 	// Ignore trailing /
-	for (int i = 0; path[i] != '\0' && path[i + 1] != '\0'; ++i)
-		depth += path[i] == '/';
-	for (; depth >= 0; --depth) {
+	for (int i = 0; ROOT[i] != '\0' && ROOT[i + 1] != '\0'; ++i)
+		depth += ROOT[i] == '/';
+	for (; depth >= 0; --depth, chdir("..")) {
 		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK)) {
-			CHECK_IO(NULL != getcwd(path, LENGTH(path)), IO_ERROR);
-			setenv("FUSEMAKE_NO_DEPEND", path, true);
+			CHECK_IO(NULL != getcwd(ROOT, LENGTH(ROOT)), IO_ERROR);
+			setenv("FUSEMAKE_NO_DEPEND", ROOT, true);
 			return;
 		} else if (errno != ENOENT) {
 			CHECK_IO(false, IO_ERROR);
 		}
 	}
+  ROOT_NAME = strrchr(ROOT, '/') + 1;
 	eprintf("Could not find .fusemake directory.\nHave you initialised your "
 	        "project with fusemake --init <builder>?\n");
 	exit(ENOENT);
@@ -214,7 +202,8 @@ int main(int argc, char *argv[]) {
 		}
 	} else {
 		active_processes = sysconf(_SC_NPROCESSORS_ONLN);
-		sem_init(&process_available, 0, active_processes);
+    process_manager_init(active_processes);
+
 		chdir_to_root();
 		validate_executable(BUILDER);
 		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
@@ -247,6 +236,7 @@ int main(int argc, char *argv[]) {
 	err_out1:
 		fuse_opt_free_args(&args);
 		sem_destroy(&process_available);
+    process_manager_teadown();
 
 		return ret ? 1 : 0;
 	}
