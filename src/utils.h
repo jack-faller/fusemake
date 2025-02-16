@@ -7,7 +7,7 @@
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
 #define DEBUG(...) eprintf(__VA_ARGS__)
 
-#define of_RAW(A, B) A##_##B
-#define of(A, B) of_RAW(A, B)
+#define of_0(A, B) A##_##B
+#define of(A, B) of_0(A, B)
 
 #endif

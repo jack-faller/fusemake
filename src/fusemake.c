@@ -75,48 +75,6 @@ int main(int argc, char *argv[]) {
 	int ret = -1;
 	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
 		printf("%s\n", usage);
-	} else if (argc > 1 && 0 == strcmp(argv[1], "--init")) {
-		CHECK_3_ARGS("--init");
-		validate_executable(BUILDER);
-#define MKDIR(DIR) \
-	if (-1 == mkdir(DIR, 0755)) { \
-		ret = errno; \
-		if (errno == EEXIST) \
-			fprintf( \
-				stderr, \
-				"Fusemake already initialised in this directory.\nDid you " \
-				"mean --set-builder?\n" \
-			); \
-		else \
-			fprintf( \
-				stderr, \
-				"Error creating directory %s, please remove .fusemake and " \
-				"try again.\n", \
-				DIR \
-			); \
-		return ret; \
-	}
-		MKDIR("/" DOT_FUSEMAKE);
-		MKDIR("/" MOUNT_POINT);
-		if (-1 == symlink(argv[2], BUILDER)) {
-			ret = errno;
-			fprintf(
-				stderr,
-				"Error creating symlink %s, please remove .fusemake and try "
-				"again.\n",
-				BUILDER
-			);
-			return ret;
-		}
-	} else if (argc > 1 && 0 == strcmp(argv[1], "--set-builder")) {
-		char builder[PATH_MAX];
-		CHECK_3_ARGS("--set-builder")
-		validate_executable(argv[2]);
-		CHECK_IO(NULL != realpath(argv[2], builder), IO_ERROR);
-		CHECK_IO(
-			0 == symlink(builder, BUILDER),
-			"IO error, failed to symlink builder.\n"
-		);
 	} else if (argc > 1 && 0 == strcmp(argv[1], "--depend")) {
 		if (argc >= 3) {
 			for (int i = 2; i < argc; ++i)
