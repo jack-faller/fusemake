@@ -115,6 +115,8 @@ int main(int argc, char *argv[]) {
 		if (fuse_session_mount(se, MOUNT_POINT) != 0)
 			goto err_out3;
 
+		set_cloexec(fuse_session_fd(se), true);
+
 		fuse_daemonize(true);
 
 		ret = fuse_session_loop(se);

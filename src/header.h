@@ -34,6 +34,7 @@ typedef struct Inode Inode;
 
 // file_system.c
 extern const struct fuse_lowlevel_ops fm_oper;
+int set_cloexec(int fd, bool value);
 
 // process_manager.c
 void process_manager_init(int process_count);

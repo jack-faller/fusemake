@@ -13,8 +13,20 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+int set_cloexec(int fd, bool value) {
+	int flags = fcntl(fd, F_GETFD, 0);
+	if (flags < 0)
+		return flags;
+	if (value != 0)
+		flags |= FD_CLOEXEC;
+	else
+		flags &= ~FD_CLOEXEC;
+	return fcntl(fd, F_SETFD, flags);
+}
+
 // Use these instead of the fuse versions to handle lookups.
-static int fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
+static int
+fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
 	printf("fm_reply_entry\n");
 	ino_ref(entry, 1);
 	return fuse_reply_entry(req, e);
@@ -359,6 +371,7 @@ fm_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 		Inode *i = inode(fuse2ino(ino));
 		DEBUG("fm_opendir %s\n", inode_path(i));
 		fd = opendir(inode_path(i));
+		set_cloexec(dirfd(fd), true);
 		if (fd == NULL)
 			return (void)fuse_reply_err(req, errno);
 		fi->fh = (typeof(fi->fh))fd;
@@ -528,7 +541,9 @@ fm_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 
 static int fm_do_open(Ino ino, mode_t mode, struct fuse_file_info *fi) {
 	DEBUG("fm_do_open %s\n", inode_path(inode(ino)));
-	int fd = open(inode_path(inode(ino)), fi->flags & ~O_NOFOLLOW, mode);
+	int fd = open(
+		inode_path(inode(ino)), (fi->flags & ~O_NOFOLLOW) | O_CLOEXEC, mode
+	);
 	if (fd == -1)
 		return errno;
 	fi->fh = fd;
