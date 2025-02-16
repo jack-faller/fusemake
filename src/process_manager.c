@@ -26,7 +26,7 @@ static void *build(void *process_as_ptr) {
 	sem_wait(&process_available);
 	return NULL;
 }
-void queue_build(Inode *i, Callback cb, CallbackArgs cb_args) {
+void queue_build(Inode *i, Callback cb, Callback_Args cb_args) {
 	const char *path = inode_path(i);
 	Ino root = add_root(path);
 	pthread_t thread;

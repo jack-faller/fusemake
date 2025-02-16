@@ -2,7 +2,6 @@
   Based on the pass-through example given by libfuse.
 */
 // TODO: error handling on reply functions.
-// TODO: zero argument version of --init that creates a skeleton make.sh.
 
 #include "header.h"
 
@@ -40,26 +39,6 @@ void validate_executable(const char *builder) {
 			exit(ret); \
 		} \
 	}
-void chdir_to_root() {
-	CHECK_IO(NULL != getcwd(ROOT, LENGTH(ROOT)), IO_ERROR);
-	int depth = 0;
-	// Ignore trailing /
-	for (int i = 0; ROOT[i] != '\0' && ROOT[i + 1] != '\0'; ++i)
-		depth += ROOT[i] == '/';
-	for (; depth >= 0; --depth, chdir("..")) {
-		if (0 == access(DOT_FUSEMAKE, R_OK | W_OK | X_OK)) {
-			CHECK_IO(NULL != getcwd(ROOT, LENGTH(ROOT)), IO_ERROR);
-			setenv("FUSEMAKE_NO_DEPEND", ROOT, true);
-			return;
-		} else if (errno != ENOENT) {
-			CHECK_IO(false, IO_ERROR);
-		}
-	}
-  ROOT_NAME = strrchr(ROOT, '/') + 1;
-	eprintf("Could not find .fusemake directory.\nHave you initialised your "
-	        "project with fusemake --init <builder>?\n");
-	exit(ENOENT);
-}
 void depend(char *path) {
 	static char dot[] = ".";
 	char *dir = path, *name = strrchr(path, '/');
@@ -95,51 +74,7 @@ int main(int argc, char *argv[]) {
 	}
 	int ret = -1;
 	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
-		const static char *parameters_flat[] = {
-			"--depend",
-			"<args>",
-			"Build each of args asynchronously and write the names to stdout.",
-			"Should only be called during the build process.",
-			NULL,
-			"--depend",
-			"",
-			"Without arguments, use lines from stdin.",
-			NULL,
-			"--processes",
-			"<count>",
-			"Allow approximately count build processes.",
-			"Defaults to the number of processors on the device.",
-			NULL,
-			"--set-builder",
-			"<builder>",
-			"Set the builder.",
-			NULL,
-			"--init",
-			"<builder>",
-			"Initialise the current directory for building with builder.",
-			NULL,
-		};
-		static const char **parameters[LENGTH(parameters_flat)];
-		int parameter_count = 0;
-		for (int i = 0; i < LENGTH(parameters_flat);) {
-			parameters[parameter_count++] = &parameters_flat[i];
-			// Move to start of next sub-array.
-			while (parameters_flat[i++] != NULL)
-				;
-		}
 		printf("%s\n", usage);
-		int width_1 = 0, width_2 = 0;
-		for (int i = 0; i < parameter_count; ++i)
-			width_1 = MAX(width_1, strlen(parameters[i][0])),
-			width_2 = MAX(width_2, strlen(parameters[i][1]));
-		for (int i = 0; i < parameter_count; ++i) {
-#define LINE(A, B, C) \
-	printf("  %-*s%-*s%s\n", width_1 + 1, A, width_2 + 2, B, C);
-			LINE(parameters[i][0], parameters[i][1], parameters[i][2]);
-			for (int j = 3; parameters[i][j] != NULL; ++j)
-				LINE("", "", parameters[i][j]);
-#undef LINE
-		}
 	} else if (argc > 1 && 0 == strcmp(argv[1], "--init")) {
 		CHECK_3_ARGS("--init");
 		validate_executable(BUILDER);
@@ -178,7 +113,6 @@ int main(int argc, char *argv[]) {
 		CHECK_3_ARGS("--set-builder")
 		validate_executable(argv[2]);
 		CHECK_IO(NULL != realpath(argv[2], builder), IO_ERROR);
-		chdir_to_root();
 		CHECK_IO(
 			0 == symlink(builder, BUILDER),
 			"IO error, failed to symlink builder.\n"
@@ -202,9 +136,8 @@ int main(int argc, char *argv[]) {
 		}
 	} else {
 		active_processes = sysconf(_SC_NPROCESSORS_ONLN);
-    process_manager_init(active_processes);
+		process_manager_init(active_processes);
 
-		chdir_to_root();
 		validate_executable(BUILDER);
 		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
 		struct fuse_session *se;
@@ -235,8 +168,7 @@ int main(int argc, char *argv[]) {
 		fuse_session_destroy(se);
 	err_out1:
 		fuse_opt_free_args(&args);
-		sem_destroy(&process_available);
-    process_manager_teadown();
+		process_manager_free();
 
 		return ret ? 1 : 0;
 	}

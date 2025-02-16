@@ -14,12 +14,12 @@
 #include <unistd.h>
 
 // Use these instead of the fuse versions to handle lookups.
-int fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
+static int fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
 	printf("fm_reply_entry\n");
 	ino_ref(entry, 1);
 	return fuse_reply_entry(req, e);
 }
-int fm_reply_create(
+static int fm_reply_create(
 	Ino entry,
 	fuse_req_t req,
 	struct fuse_entry_param *e,

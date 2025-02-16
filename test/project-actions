@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "$PA_ORIGIN"
+pwd
+echo "$0" "$@"

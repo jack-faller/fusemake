@@ -1,9 +1,9 @@
 #ifndef HEADER
 #define HEADER
 
+#include "utils.h"
+
 #include <semaphore.h>
-#include <stdbool.h>
-#include <stdio.h>
 
 #define FUSE_USE_VERSION 34
 #include <fuse_lowlevel.h>
@@ -18,9 +18,6 @@
 #define MOUNT_POINT DOT_FUSEMAKE "/mount"
 #define MOUNT_TO_ROOT "../../.."
 #define BUILDER DOT_FUSEMAKE "/builder"
-
-#define eprintf(...) fprintf(stderr, __VA_ARGS__)
-#define DEBUG(...) eprintf(__VA_ARGS__)
 
 // Who needs more than 65k processes?
 #define PROCESS_MAX (1 << 16)
@@ -44,9 +41,9 @@ void process_manager_free();
 extern char *builder_path;
 typedef struct {
 	fuse_req_t request;
-} CallbackArgs;
-typedef void (*Callback)(CallbackArgs);
-void queue_build(Inode *i, Callback cb, CallbackArgs cb_args);
+} Callback_Args;
+typedef void (*Callback)(Callback_Args);
+void queue_build(Inode *i, Callback cb, Callback_Args cb_args);
 
 // inode.c
 extern int processes_len, active_processes;
