@@ -1,5 +1,5 @@
-#ifndef HEADER
-#define HEADER
+#ifndef FUSEMAKE_H
+#define FUSEMAKE_H
 
 #include "utils.h"
 

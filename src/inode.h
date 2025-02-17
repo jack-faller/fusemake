@@ -1,3 +1,6 @@
+#ifndef INODE_H
+#define INODE_H
+
 #define FUSE_USE_VERSION 34
 #include <fuse_lowlevel.h>
 #include "utils.h"
@@ -28,3 +31,5 @@ const char *inode_name(Inode *i);
 int ino_generation(Ino ino);
 bool root_active(int root);
 Ino ino_child(Ino parent, const char *name);
+
+#endif
