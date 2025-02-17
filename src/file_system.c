@@ -27,7 +27,7 @@ int set_cloexec(int fd, bool value) {
 // Use these instead of the fuse versions to handle lookups.
 static int
 fm_reply_entry(Ino entry, fuse_req_t req, struct fuse_entry_param *e) {
-	printf("fm_reply_entry\n");
+	eprintf("fm_reply_entry\n");
 	ino_ref(entry, 1);
 	return fuse_reply_entry(req, e);
 }
@@ -37,7 +37,7 @@ static int fm_reply_create(
 	struct fuse_entry_param *e,
 	struct fuse_file_info *fi
 ) {
-	printf("fm_reply_create\n");
+	eprintf("fm_reply_create\n");
 	ino_ref(entry, 1);
 	return fuse_reply_create(req, e, fi);
 }

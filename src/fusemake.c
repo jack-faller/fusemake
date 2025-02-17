@@ -65,16 +65,13 @@ void depend(char *path) {
 int main(int argc, char *argv[]) {
 #define CHECK_3_ARGS(OP) \
 	if (argc != 3) { \
-		fprintf( \
-			stderr, \
-			"Too many arguments to fusemake " OP ".\n" \
-			"\tUsage: fusemake " OP " /path/to/builder\n" \
-		); \
+		eprintf("Too many arguments to fusemake " OP ".\n" \
+		        "\tUsage: fusemake " OP " /path/to/builder\n"); \
 		return E2BIG; \
 	}
 	int ret = -1;
 	if (argc > 1 && 0 == strcmp(argv[1], "--help")) {
-		printf("%s\n", usage);
+		eprintf("%s\n", usage);
 	} else if (argc > 1 && 0 == strcmp(argv[1], "--depend")) {
 		if (argc >= 3) {
 			for (int i = 2; i < argc; ++i)
