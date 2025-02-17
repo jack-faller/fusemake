@@ -3,7 +3,9 @@
 */
 // TODO: error handling on reply functions.
 
-#include "header.h"
+#include "fusemake.h"
+#include "inode.h"
+#include "file-system.h"
 
 #include <errno.h>
 #include <pthread.h>
@@ -91,7 +93,6 @@ int main(int argc, char *argv[]) {
 		}
 	} else {
 		active_processes = sysconf(_SC_NPROCESSORS_ONLN);
-		process_manager_init(active_processes);
 
 		validate_executable(BUILDER);
 		struct fuse_args args = FUSE_ARGS_INIT(LENGTH(fuse_args), fuse_args);
@@ -125,7 +126,6 @@ int main(int argc, char *argv[]) {
 		fuse_session_destroy(se);
 	err_out1:
 		fuse_opt_free_args(&args);
-		process_manager_free();
 
 		return ret ? 1 : 0;
 	}

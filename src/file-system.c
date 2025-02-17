@@ -1,4 +1,5 @@
-#include "header.h"
+#include "inode.h"
+#include "fusemake.h"
 
 #include <assert.h>
 #include <dirent.h>

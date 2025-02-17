@@ -1,4 +1,5 @@
-#include "header.h"
+#include "inode.h"
+#include "fusemake.h"
 
 #include <stdlib.h>
 #include <string.h>
