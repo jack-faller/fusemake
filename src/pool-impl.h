@@ -7,6 +7,9 @@ Pool_T of(Pool_T, new)() {
 		.elements = of(of(List, of(Pool_Element, pool_T)), new)(),
 	};
 }
+void method(free, Pool_T, *pool) {
+  of(of(List, of(Pool_Element, pool_T)), free)(&pool->elements);
+}
 unsigned method(next, Pool_T, *pool) {
 	if (pool->next == pool->elements.length) {
 		of(of(List, of(Pool_Element, pool_T)), reserve)(&pool->elements, 1);

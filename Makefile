@@ -4,15 +4,18 @@ all: fusemake pa
 out/src/%.c: src/%-types.txt src/%-decl.h src/%-impl.h
 	mkdir -p $(@D)
 	rm $@ || true
-	for i in $$(cat src/$*-types.txt); do \
+	while read i; do \
+		read ii; \
 		echo "#ifndef $*_$$i" > out/src/$*-$$i.h; \
 		echo "#define $*_$$i" >> out/src/$*-$$i.h; \
 		echo "#define $*_T $$i" >> out/src/$*-$$i.h; \
+		echo $$ii >> out/src/$*-$$i.h; \
 		echo "#include \"$*-decl.h\"" >> out/src/$*-$$i.h; \
 		echo "#endif" >> out/src/$*-$$i.h; \
 		echo "#define $*_T $$i" >> $@; \
+		echo $$ii >> $@; \
 		echo "#include \"$*-impl.h\"" >> $@; \
-	done
+	done < src/$*-types.txt
 
 out/%.o: %.c $(shell find src -name '*.h') out/string_defs.h out/src/list.c out/src/pool.c
 	mkdir -p $(@D)

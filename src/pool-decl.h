@@ -32,6 +32,7 @@ typedef struct of(Pool, pool_T) {
 unsigned method(next, Pool_T, *pool);
 void method(remove, Pool_T, * pool, unsigned element);
 Pool_T of(Pool_T, new)();
+void method(free, Pool_T, * pool);
 
 #undef Pool_T
 #ifndef POOL_IMPL

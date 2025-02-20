@@ -1,5 +1,6 @@
-Usage: fusemake <builder> <targets>
-Build the listed targets incrementally.
+Usage: fusemake <options> [--] <targets>
+  Build the listed targets incrementally. If no targets are supplied, read them
+from standard input one line at a time.
   Dependency information about build products is determined by using a fuse
 file-system to track which files are accessed by the build process. The script
 assigned to builder upon initialisation is expected to take the name of the
@@ -13,8 +14,8 @@ rebuilds when changes are made to the dependency.
 
 Options:
 --version           Display compiler version information.
---depend <args>     Build each of args asynchronously and write the names to
-                    stdout. Should only be called during the build process.
---depend            Without arguments, use lines from stdin.
 --processes <count> Allow approximately count build processes. Defaults to the
                     number of processors on the device.
+--builder <builder> Use the program builder for building. Must be specified if
+                    not already in a build process.
+--null              Delimit files on standard input with null bytes.
