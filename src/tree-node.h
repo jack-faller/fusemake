@@ -11,12 +11,11 @@ typedef unsigned node_ref;
 // prefix length gives the length.
 typedef struct Tree_Node {
 	string_ref path;
-  // Where the prefix starts in the path.
-	unsigned prefix_start : 31;
+	// Where the prefix starts in the path.
+	unsigned prefix_start;
+	unsigned prefix_length : 31;
 	bool has_value : 1;
-	union {
-		unsigned value, prefix_length;
-	};
+	unsigned value;
 	node_ref child_nodes[16];
 } Tree_Node;
 
